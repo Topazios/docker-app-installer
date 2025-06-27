@@ -42,7 +42,85 @@ A powerful Docker application one-click installer script that supports rapid dep
 - **Storage**: At least 2GB available space
 - **Memory**: Recommended 1GB or more
 
+## 💡 Usage Examples
+
+### 🔥 Zero-Configuration Quick Start
+
+```bash
+# Step 1: One-click interactive installation (auto-detect system, friendly interface)
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh)
+
+# Step 2: Select menu options
+# 1) Basic Installation (Docker + Docker Compose)  ← Choose this for first-time users
+# 2) Application Installation (Select apps to install) ← Then choose this to install apps
+
+# Step 3: Wait for automatic installation, access applications
+# Portainer: http://your-server-ip:9000    (Docker management interface)
+# qBittorrent: http://your-server-ip:8080  (BT download)
+```
+
+### ⚡ Advanced One-Click Installation
+
+```bash
+# 🚀 Speed Install: Docker + Portainer + qBittorrent (one command)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer --app qbittorrent
+
+# 🎯 Precise Install: Install specific application only
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app nginx-proxy-manager
+
+# 🔧 Custom Port Installation
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer --port portainer:9001
+```
+
+### 📊 Common Maintenance Commands
+
+```bash
+# View all application status
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --status
+
+# Enter uninstall menu
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --uninstall
+
+# View complete help
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --help
+```
+
 ## 🚀 Quick Start
+
+### Method 1: ⚡ One-Click Direct Run (Recommended)
+
+> The simplest way to use, no need to download files, run directly
+
+```bash
+# 🔥 One-click interactive installation (recommended for beginners)
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh)
+
+# Or using wget
+bash <(wget -qO- https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh)
+```
+
+#### 🚀 Common One-Click Commands
+
+```bash
+# 🐳 Install Docker + Docker Compose only
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-docker-only
+
+# 📦 One-click install Portainer (Docker management interface)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer
+
+# 📦 One-click install multiple applications
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer --app qbittorrent
+
+# 📊 View system status
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --status
+
+# ❓ View help information
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --help
+```
+
+### Method 2: 📥 Download and Use
+
+> Suitable for users who need offline use or customization
 
 ### 1. Download Script
 

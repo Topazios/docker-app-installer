@@ -42,7 +42,85 @@
 - **存储**: 至少 2GB 可用空间
 - **内存**: 建议 1GB 以上
 
+## 💡 使用示例
+
+### 🔥 零配置快速上手
+
+```bash
+# 第一步：一键交互式安装（自动检测系统，提供友好界面）
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh)
+
+# 第二步：选择菜单选项
+# 1) 基础安装 (Docker + Docker Compose)  ← 首次使用选这个
+# 2) 应用安装 (选择要安装的应用)        ← 然后选这个安装应用
+
+# 第三步：等待自动安装完成，访问应用
+# Portainer: http://your-server-ip:9000    (Docker管理界面)
+# qBittorrent: http://your-server-ip:8080  (BT下载)
+```
+
+### ⚡ 高级用户一键安装
+
+```bash
+# 🚀 极速安装：Docker + Portainer + qBittorrent (一条命令完成)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer --app qbittorrent
+
+# 🎯 精准安装：仅安装指定应用
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app nginx-proxy-manager
+
+# 🔧 自定义端口安装
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer --port portainer:9001
+```
+
+### 📊 常用维护命令
+
+```bash
+# 查看所有应用状态
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --status
+
+# 进入卸载菜单
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --uninstall
+
+# 查看完整帮助
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --help
+```
+
 ## 🚀 快速开始
+
+### 方法一：⚡ 一键直接运行（推荐）
+
+> 最简单的使用方式，无需下载文件，直接运行
+
+```bash
+# 🔥 一键交互式安装（推荐新手使用）
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh)
+
+# 或使用 wget
+bash <(wget -qO- https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh)
+```
+
+#### 🚀 常用一键命令
+
+```bash
+# 🐳 仅安装 Docker + Docker Compose
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-docker-only
+
+# 📦 一键安装 Portainer (Docker管理界面)
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer
+
+# 📦 一键安装多个应用
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --install-apps --app portainer --app qbittorrent
+
+# 📊 查看系统状态
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --status
+
+# ❓ 查看帮助信息
+bash <(curl -fsSL https://raw.githubusercontent.com/Topazios/docker-app-installer/main/docker-app-installer.sh) --help
+```
+
+### 方法二：📥 下载后使用
+
+> 适合需要离线使用或自定义的用户
 
 ### 1. 下载脚本
 
