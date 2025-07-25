@@ -26,6 +26,7 @@ declare -A APPS_CONFIG=(
     ["vertex"]="Vertex - 文件管理下载工具"
     ["nginx-proxy-manager"]="Nginx Proxy Manager - 反向代理管理"
     ["transmission"]="Transmission - BT 下载工具"
+    ["filebrowser"]="File Browser - 文件浏览器"
 )
 
 declare -A APPS_PORTS=(
@@ -34,6 +35,27 @@ declare -A APPS_PORTS=(
     ["vertex"]=3000
     ["nginx-proxy-manager"]=81
     ["transmission"]=9091
+    ["filebrowser"]=8081
+)
+
+# 应用版本配置（默认使用最新稳定版）
+declare -A APPS_VERSIONS=(
+    ["portainer"]="latest"
+    ["qbittorrent"]="4.5.5"
+    ["vertex"]="stable"
+    ["nginx-proxy-manager"]="latest"
+    ["transmission"]="latest"
+    ["filebrowser"]="latest"
+)
+
+# 应用镜像配置
+declare -A APPS_IMAGES=(
+    ["portainer"]="portainer/portainer-ce"
+    ["qbittorrent"]="lscr.io/linuxserver/qbittorrent"
+    ["vertex"]="lswl/vertex"
+    ["nginx-proxy-manager"]="chishin/nginx-proxy-manager-zh"
+    ["transmission"]="lscr.io/linuxserver/transmission"
+    ["filebrowser"]="filebrowser/filebrowser"
 )
 
 declare -A APPS_SELECTED=(
@@ -42,6 +64,7 @@ declare -A APPS_SELECTED=(
     ["vertex"]=false
     ["nginx-proxy-manager"]=false
     ["transmission"]=false
+    ["filebrowser"]=false
 )
 
 # 基础目录
@@ -176,6 +199,145 @@ check_system() {
     fi
 }
 
+# BBR 管理函数
+check_bbr_status() {
+    log_info "检查当前BBR状态..."
+    
+    # 检查内核参数
+    local bbr_enabled=$(sysctl -n net.core.default_qdisc 2>/dev/null)
+    local bbr_congestion=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+    
+    if [[ "$bbr_enabled" == "fq" && "$bbr_congestion" == "bbr" ]]; then
+        log_success "BBR 已启用"
+        log_info "默认队列规则: $bbr_enabled"
+        log_info "拥塞控制算法: $bbr_congestion"
+        return 0
+    else
+        log_warning "BBR 未启用"
+        log_info "当前队列规则: $bbr_enabled"
+        log_info "当前拥塞控制: $bbr_congestion"
+        return 1
+    fi
+}
+
+enable_bbr() {
+    log_info "启用 BBR 拥塞控制算法..."
+    
+    # 检查内核版本
+    local kernel_version=$(uname -r | cut -d. -f1,2)
+    if [[ $(echo "$kernel_version >= 4.9" | bc -l 2>/dev/null) -eq 0 ]]; then
+        log_error "内核版本过低，需要 4.9 或更高版本才能使用 BBR"
+        log_info "当前内核版本: $(uname -r)"
+        return 1
+    fi
+    
+    # 设置内核参数
+    cat >> /etc/sysctl.conf << EOF
+
+# BBR 拥塞控制算法
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+EOF
+    
+    # 立即应用设置
+    sysctl -p /etc/sysctl.conf
+    
+    # 验证设置
+    if check_bbr_status; then
+        log_success "BBR 启用成功"
+        return 0
+    else
+        log_error "BBR 启用失败"
+        return 1
+    fi
+}
+
+disable_bbr() {
+    log_info "禁用 BBR 拥塞控制算法..."
+    
+    # 备份原配置
+    cp /etc/sysctl.conf /etc/sysctl.conf.backup.$(date +%Y%m%d_%H%M%S)
+    
+    # 移除BBR相关配置
+    sed -i '/# BBR 拥塞控制算法/,+2d' /etc/sysctl.conf
+    
+    # 恢复默认设置
+    sysctl -w net.core.default_qdisc=pfifo_fast
+    sysctl -w net.ipv4.tcp_congestion_control=cubic
+    
+    # 应用设置
+    sysctl -p /etc/sysctl.conf
+    
+    log_success "BBR 已禁用，恢复默认设置"
+    log_info "当前队列规则: $(sysctl -n net.core.default_qdisc)"
+    log_info "当前拥塞控制: $(sysctl -n net.ipv4.tcp_congestion_control)"
+}
+
+check_bbrx_status() {
+    log_info "检查当前BBRx状态..."
+    
+    # 检查是否安装了BBRx内核模块
+    if lsmod | grep -q bbrx; then
+        log_success "BBRx 内核模块已加载"
+        return 0
+    else
+        log_warning "BBRx 内核模块未加载"
+        return 1
+    fi
+}
+
+install_bbrx() {
+    log_info "安装 BBRx 内核模块..."
+    
+    # 检查系统架构
+    local arch=$(uname -m)
+    if [[ "$arch" != "x86_64" ]]; then
+        log_error "BBRx 目前仅支持 x86_64 架构"
+        log_info "当前架构: $arch"
+        return 1
+    fi
+    
+    # 安装依赖
+    apt-get update -qq
+    apt-get install -y build-essential linux-headers-$(uname -r) git
+    
+    # 下载并编译BBRx
+    local bbrx_dir="/tmp/bbrx"
+    rm -rf "$bbrx_dir"
+    git clone https://github.com/google/bbr.git "$bbrx_dir"
+    cd "$bbrx_dir"
+    
+    # 编译内核模块
+    make -C /lib/modules/$(uname -r)/build M=$PWD modules
+    
+    # 安装模块
+    make -C /lib/modules/$(uname -r)/build M=$PWD modules_install
+    
+    # 加载模块
+    modprobe bbrx
+    
+    # 验证安装
+    if check_bbrx_status; then
+        log_success "BBRx 安装成功"
+        return 0
+    else
+        log_error "BBRx 安装失败"
+        return 1
+    fi
+}
+
+uninstall_bbrx() {
+    log_info "卸载 BBRx 内核模块..."
+    
+    # 卸载模块
+    modprobe -r bbrx 2>/dev/null || true
+    
+    # 清理编译文件
+    rm -rf /tmp/bbrx
+    
+    log_success "BBRx 已卸载"
+}
+
 # 安装函数
 update_system() {
     log_info "更新系统包列表..."
@@ -259,6 +421,9 @@ create_docker_directories() {
                 "transmission")
                     mkdir -p "$DOCKER_BASE_DIR/transmission/"{config,downloads,watch}
                     ;;
+                "filebrowser")
+                    mkdir -p "$DOCKER_BASE_DIR/filebrowser/"{config,files}
+                    ;;
             esac
         fi
     done
@@ -289,6 +454,8 @@ install_portainer_app() {
     
     log_info "开始安装 Portainer..."
     local port="${APPS_PORTS[portainer]}"
+    local version="${APPS_VERSIONS[portainer]}"
+    local image="${APPS_IMAGES[portainer]}"
     
     if ! check_app_port_conflict "portainer"; then
         log_warning "端口冲突，跳过安装"
@@ -304,12 +471,15 @@ install_portainer_app() {
         -p "$port:9000" \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "$DOCKER_BASE_DIR/portainer/data:/data" \
-        portainer/portainer-ce:latest
+        "$image:$version"
     
-    if docker ps | grep -q portainer; then
+    local status=$(docker ps -a --filter "name=^portainer$" --format "{{.Status}}")
+    if [[ $status == Up* ]]; then
         log_success "Portainer 安装成功 (端口: $port)"
     else
-        log_error "Portainer 安装失败"
+        log_error "Portainer 安装失败，容器状态: $status"
+        log_info "Portainer 日志："
+        docker logs portainer 2>&1 | tail -n 20
         return 1
     fi
 }
@@ -335,6 +505,8 @@ install_qbittorrent_app() {
     
     log_info "开始安装 qBittorrent..."
     local port="${APPS_PORTS[qbittorrent]}"
+    local version="${APPS_VERSIONS[qbittorrent]}"
+    local image="${APPS_IMAGES[qbittorrent]}"
     
     if ! check_app_port_conflict "qbittorrent"; then
         log_warning "端口冲突，跳过安装"
@@ -344,21 +516,28 @@ install_qbittorrent_app() {
     docker stop qbittorrent 2>/dev/null || true
     docker rm qbittorrent 2>/dev/null || true
     
+    # 创建共享下载目录
+    mkdir -p "$DOCKER_BASE_DIR/shared/downloads"
+    
     docker run -d \
         --name qbittorrent \
         --restart=always \
         -e PUID=1000 -e PGID=1000 -e TZ=Asia/Shanghai -e WEBUI_PORT="$port" \
         -p "$port:$port" -p 6881:6881 -p 6881:6881/udp \
         -v "$DOCKER_BASE_DIR/qbittorrent/config:/config" \
-        -v "$DOCKER_BASE_DIR/qbittorrent/downloads:/downloads" \
+        -v "$DOCKER_BASE_DIR/shared/downloads:/downloads" \
         -v "$DOCKER_BASE_DIR/qbittorrent/watch:/watch" \
-        lscr.io/linuxserver/qbittorrent:4.5.5
+        "$image:$version"
     
-    if docker ps | grep -q qbittorrent; then
+    local status=$(docker ps -a --filter "name=^qbittorrent$" --format "{{.Status}}")
+    if [[ $status == Up* ]]; then
         log_success "qBittorrent 安装成功 (端口: $port)"
+        log_info "下载目录已映射到共享目录: $DOCKER_BASE_DIR/shared/downloads"
         log_info "默认用户名: admin，查看密码: docker logs qbittorrent"
     else
-        log_error "qBittorrent 安装失败"
+        log_error "qBittorrent 安装失败，容器状态: $status"
+        log_info "qBittorrent 日志："
+        docker logs qbittorrent 2>&1 | tail -n 20
         return 1
     fi
 }
@@ -384,6 +563,8 @@ install_vertex_app() {
     
     log_info "开始安装 Vertex..."
     local port="${APPS_PORTS[vertex]}"
+    local version="${APPS_VERSIONS[vertex]}"
+    local image="${APPS_IMAGES[vertex]}"
     
     if ! check_app_port_conflict "vertex"; then
         log_warning "端口冲突，跳过安装"
@@ -399,12 +580,15 @@ install_vertex_app() {
         -p "$port:3000" \
         -e TZ=Asia/Shanghai \
         --restart unless-stopped \
-        lswl/vertex:stable
+        "$image:$version"
     
-    if docker ps | grep -q vertex; then
+    local status=$(docker ps -a --filter "name=^vertex$" --format "{{.Status}}")
+    if [[ $status == Up* ]]; then
         log_success "Vertex 安装成功 (端口: $port)"
     else
-        log_error "Vertex 安装失败"
+        log_error "Vertex 安装失败，容器状态: $status"
+        log_info "Vertex 日志："
+        docker logs vertex 2>&1 | tail -n 20
         return 1
     fi
 }
@@ -430,6 +614,8 @@ install_nginx_proxy_manager_app() {
     
     log_info "开始安装 Nginx Proxy Manager..."
     local port="${APPS_PORTS[nginx-proxy-manager]}"
+    local version="${APPS_VERSIONS[nginx-proxy-manager]}"
+    local image="${APPS_IMAGES[nginx-proxy-manager]}"
     
     if ! check_app_port_conflict "nginx-proxy-manager"; then
         log_warning "端口冲突，跳过安装"
@@ -445,13 +631,16 @@ install_nginx_proxy_manager_app() {
         -p "$port:81" -p 80:80 -p 443:443 \
         -v "$DOCKER_BASE_DIR/nginx-proxy-manager/data:/data" \
         -v "$DOCKER_BASE_DIR/nginx-proxy-manager/letsencrypt:/etc/letsencrypt" \
-        chishin/nginx-proxy-manager-zh:latest
+        "$image:$version"
     
-    if docker ps | grep -q nginx-proxy-manager; then
+    local status=$(docker ps -a --filter "name=^nginx-proxy-manager$" --format "{{.Status}}")
+    if [[ $status == Up* ]]; then
         log_success "Nginx Proxy Manager 安装成功 (端口: $port)"
         log_info "默认登录: admin@example.com / changeme"
     else
-        log_error "Nginx Proxy Manager 安装失败"
+        log_error "Nginx Proxy Manager 安装失败，容器状态: $status"
+        log_info "Nginx Proxy Manager 日志："
+        docker logs nginx-proxy-manager 2>&1 | tail -n 20
         return 1
     fi
 }
@@ -477,6 +666,8 @@ install_transmission_app() {
     
     log_info "开始安装 Transmission..."
     local port="${APPS_PORTS[transmission]}"
+    local version="${APPS_VERSIONS[transmission]}"
+    local image="${APPS_IMAGES[transmission]}"
     
     if ! check_app_port_conflict "transmission"; then
         log_warning "端口冲突，跳过安装"
@@ -486,21 +677,84 @@ install_transmission_app() {
     docker stop transmission 2>/dev/null || true
     docker rm transmission 2>/dev/null || true
     
+    # 创建共享下载目录
+    mkdir -p "$DOCKER_BASE_DIR/shared/downloads"
+    
     docker run -d \
         --name transmission \
         --restart=always \
         -e PUID=1000 -e PGID=1000 -e TZ=Asia/Shanghai -e USER=admin -e PASS=changeme \
         -p "$port:9091" -p 51413:51413 -p 51413:51413/udp \
         -v "$DOCKER_BASE_DIR/transmission/config:/config" \
-        -v "$DOCKER_BASE_DIR/transmission/downloads:/downloads" \
+        -v "$DOCKER_BASE_DIR/shared/downloads:/downloads" \
         -v "$DOCKER_BASE_DIR/transmission/watch:/watch" \
-        lscr.io/linuxserver/transmission:latest
+        "$image:$version"
     
-    if docker ps | grep -q transmission; then
+    local status=$(docker ps -a --filter "name=^transmission$" --format "{{.Status}}")
+    if [[ $status == Up* ]]; then
         log_success "Transmission 安装成功 (端口: $port)"
+        log_info "下载目录已映射到共享目录: $DOCKER_BASE_DIR/shared/downloads"
         log_info "默认登录: admin / changeme"
     else
-        log_error "Transmission 安装失败"
+        log_error "Transmission 安装失败，容器状态: $status"
+        log_info "Transmission 日志："
+        docker logs transmission 2>&1 | tail -n 20
+        return 1
+    fi
+}
+
+install_filebrowser_app() {
+    log_info "检查 File Browser 安装状态..."
+    local app_status
+    check_app_installed "filebrowser"
+    app_status=$?
+    
+    if [ $app_status -eq 0 ]; then
+        log_info "File Browser 已安装并运行中，跳过安装"
+        return 0
+    elif [ $app_status -eq 2 ]; then
+        read -p "File Browser 已安装但未运行，是否重新启动? (y/N): " restart_choice
+        if [[ $restart_choice =~ ^[Yy]$ ]]; then
+            docker start filebrowser 2>/dev/null && log_success "File Browser 已重新启动" && return 0
+        else
+            log_info "跳过 File Browser 安装"
+            return 0
+        fi
+    fi
+    
+    log_info "开始安装 File Browser..."
+    local port="${APPS_PORTS[filebrowser]}"
+    local version="${APPS_VERSIONS[filebrowser]}"
+    local image="${APPS_IMAGES[filebrowser]}"
+    
+    if ! check_app_port_conflict "filebrowser"; then
+        log_warning "端口冲突，跳过安装"
+        return 1
+    fi
+    
+    docker stop filebrowser 2>/dev/null || true
+    docker rm filebrowser 2>/dev/null || true
+    
+    # 创建共享下载目录
+    mkdir -p "$DOCKER_BASE_DIR/shared/downloads"
+    
+    docker run -d \
+        --name filebrowser \
+        --restart=always \
+        -p "$port:8081" \
+        -v "$DOCKER_BASE_DIR/filebrowser/config:/config" \
+        -v "$DOCKER_BASE_DIR/shared/downloads:/srv" \
+        "$image:$version"
+    
+    local status=$(docker ps -a --filter "name=^filebrowser$" --format "{{.Status}}")
+    if [[ $status == Up* ]]; then
+        log_success "File Browser 安装成功 (端口: $port)"
+        log_info "文件浏览器已映射到共享下载目录: $DOCKER_BASE_DIR/shared/downloads"
+        log_info "默认登录: admin / admin"
+    else
+        log_error "File Browser 安装失败，容器状态: $status"
+        log_info "File Browser 日志："
+        docker logs filebrowser 2>&1 | tail -n 20
         return 1
     fi
 }
@@ -558,6 +812,14 @@ install_selected_apps() {
                     ;;
                 "transmission") 
                     if install_transmission_app; then
+                        ((installed_count++))
+                        log_success "$app 处理完成"
+                    else
+                        log_warning "$app 处理失败或跳过"
+                    fi
+                    ;;
+                "filebrowser")
+                    if install_filebrowser_app; then
                         ((installed_count++))
                         log_success "$app 处理完成"
                     else
@@ -671,9 +933,10 @@ show_main_menu() {
     log_menu "2) 应用安装 (选择要安装的应用)"
     log_menu "3) 应用卸载 (卸载已安装的应用)"
     log_menu "4) 查看当前状态"
-    log_menu "5) 退出"
+    log_menu "5) BBR/BBRx 管理"
+    log_menu "6) 退出"
     echo
-    read -p "请输入选项 (1-5): " choice
+    read -p "请输入选项 (1-6): " choice
     echo
     
     case $choice in
@@ -681,7 +944,8 @@ show_main_menu() {
         2) show_apps_selection_menu ;;
         3) show_uninstall_menu ;;
         4) show_status ;;
-        5) log_info "退出脚本"; exit 0 ;;
+        5) show_bbr_menu ;;
+        6) log_info "退出脚本"; exit 0 ;;
         *) log_error "无效选项"; sleep 2; show_main_menu ;;
     esac
 }
@@ -702,12 +966,15 @@ show_apps_selection_menu() {
             app_list+=("$app")
             local status="未选择"
             local status_color="${RED}"
+            local version="${APPS_VERSIONS[$app]}"
+            local image="${APPS_IMAGES[$app]}"
             if [[ "${APPS_SELECTED[$app]}" == "true" ]]; then
-                status="已选择 (端口:${APPS_PORTS[$app]})"
+                status="已选择 (端口:${APPS_PORTS[$app]}, 版本:$version)"
                 status_color="${GREEN}"
             fi
             echo -e "  ${CYAN}$i.${NC} $app - ${APPS_CONFIG[$app]}"
             echo -e "     状态: ${status_color}$status${NC}"
+            echo -e "     镜像: $image:$version"
             echo
             ((i++))
         done
@@ -715,6 +982,7 @@ show_apps_selection_menu() {
         echo -e "  ${CYAN}a.${NC} 全选"
         echo -e "  ${CYAN}c.${NC} 清空选择"
         echo -e "  ${CYAN}p.${NC} 配置端口"
+        echo -e "  ${CYAN}v.${NC} 配置版本"
         echo -e "  ${CYAN}n.${NC} 下一步 (确认安装)"
         echo -e "  ${CYAN}b.${NC} 返回主菜单"
         echo
@@ -733,6 +1001,7 @@ show_apps_selection_menu() {
             a|A) select_all_apps ;;
             c|C) clear_all_selections ;;
             p|P) configure_apps_ports ;;
+            v|V) configure_apps_versions ;;
             n|N)
                 if check_apps_selected; then
                     confirm_apps_installation
@@ -827,6 +1096,92 @@ configure_apps_ports() {
     read -p "按任意键继续..." -n 1
 }
 
+configure_apps_versions() {
+    while true; do
+        clear
+        echo "========================================"
+        echo "           应用版本配置                "
+        echo "========================================"
+        echo
+        log_info "当前应用版本配置:"
+        echo
+        
+        local i=1
+        local app_list=()
+        for app in "${!APPS_CONFIG[@]}"; do
+            app_list+=("$app")
+            local version="${APPS_VERSIONS[$app]}"
+            local image="${APPS_IMAGES[$app]}"
+            echo -e "  ${CYAN}$i.${NC} $app - ${APPS_CONFIG[$app]}"
+            echo -e "     版本: $image:$version"
+            echo
+            ((i++))
+        done
+        
+        echo -e "  ${CYAN}b.${NC} 返回应用选择菜单"
+        echo
+        
+        log_info "版本说明:"
+        log_info "  - latest: 最新版本"
+        log_info "  - stable: 稳定版本"
+        log_info "  - 具体版本号: 如 4.5.5"
+        echo
+        
+        read -p "请选择要配置版本的应用 (1-${#app_list[@]}, b返回): " version_choice
+        
+        case $version_choice in
+            [1-9]*)
+                if [[ $version_choice -ge 1 && $version_choice -le ${#app_list[@]} ]]; then
+                    local selected_app="${app_list[$((version_choice-1))]}"
+                    configure_single_app_version "$selected_app"
+                else
+                    log_error "无效选项"; sleep 1
+                fi
+                ;;
+            b|B) 
+                log_info "返回应用选择菜单"
+                break
+                ;;
+            *) 
+                log_error "无效选项"; sleep 1
+                ;;
+        esac
+    done
+}
+
+configure_single_app_version() {
+    local app="$1"
+    local current_version="${APPS_VERSIONS[$app]}"
+    local image="${APPS_IMAGES[$app]}"
+    
+    clear
+    echo "========================================"
+    echo "        配置 $app 版本                "
+    echo "========================================"
+    echo
+    echo -e "应用: ${CYAN}$app${NC} (${APPS_CONFIG[$app]})"
+    echo -e "当前版本: $image:$current_version"
+    echo
+    log_info "版本说明:"
+    log_info "  - latest: 最新版本"
+    log_info "  - stable: 稳定版本"
+    log_info "  - 具体版本号: 如 4.5.5"
+    echo
+    
+    read -p "新版本 (留空保持当前版本): " new_version
+    
+    if [[ -n "$new_version" ]]; then
+        APPS_VERSIONS[$app]="$new_version"
+        log_success "$app 版本已设置为: $new_version"
+        echo
+        read -p "版本设置完成，按任意键继续..." -n 1
+    else
+        log_info "保持当前版本: $current_version"
+        echo
+        read -p "按任意键继续..." -n 1
+    fi
+}
+
 confirm_basic_installation() {
     clear
     echo "========================================"
@@ -865,17 +1220,22 @@ confirm_apps_installation() {
     
     for app in "${!APPS_SELECTED[@]}"; do
         if [[ "${APPS_SELECTED[$app]}" == "true" ]]; then
-            log_info "  ✓ $app - ${APPS_CONFIG[$app]} (端口:${APPS_PORTS[$app]})"
+            local version="${APPS_VERSIONS[$app]}"
+            local image="${APPS_IMAGES[$app]}"
+            log_info "  ✓ $app - ${APPS_CONFIG[$app]}"
+            log_info "    端口: ${APPS_PORTS[$app]}, 版本: $image:$version"
         fi
     done
     
     echo
     log_info "数据目录: $DOCKER_BASE_DIR"
+    log_info "共享下载目录: $DOCKER_BASE_DIR/shared/downloads"
     echo
     log_warning "注意: 脚本会自动检查已安装的组件:"
     log_warning "  - 已安装的 Docker/Docker Compose 将跳过安装"
     log_warning "  - 已运行的应用将跳过安装"
     log_warning "  - 已停止的应用将询问是否重启"
+    log_warning "  - qBittorrent、Transmission、File Browser 将共享下载目录"
     echo
     
     read -p "确认开始安装? (y/N): " confirm
@@ -976,6 +1336,92 @@ show_status() {
     echo
     read -p "按任意键返回主菜单..." -n 1
     show_main_menu
+}
+
+# BBR 管理菜单
+show_bbr_menu() {
+    check_root
+    
+    while true; do
+        clear
+        echo "========================================"
+        echo "         BBR/BBRx 管理菜单            "
+        echo "========================================"
+        echo
+        
+        # 显示当前状态
+        echo "当前状态:"
+        if check_bbr_status; then
+            echo -e "  ${GREEN}✓ BBR 已启用${NC}"
+        else
+            echo -e "  ${RED}✗ BBR 未启用${NC}"
+        fi
+        
+        if check_bbrx_status; then
+            echo -e "  ${GREEN}✓ BBRx 已安装${NC}"
+        else
+            echo -e "  ${RED}✗ BBRx 未安装${NC}"
+        fi
+        
+        echo
+        log_menu "请选择操作:"
+        log_menu "1) 启用 BBR"
+        log_menu "2) 禁用 BBR"
+        log_menu "3) 安装 BBRx"
+        log_menu "4) 卸载 BBRx"
+        log_menu "5) 查看详细状态"
+        log_menu "6) 返回主菜单"
+        echo
+        
+        read -p "请输入选项 (1-6): " bbr_choice
+        
+        case $bbr_choice in
+            1) enable_bbr ;;
+            2) disable_bbr ;;
+            3) install_bbrx ;;
+            4) uninstall_bbrx ;;
+            5) show_bbr_detailed_status ;;
+            6) show_main_menu; break ;;
+            *) log_error "无效选项"; sleep 1 ;;
+        esac
+        
+        echo
+        read -p "按任意键继续..." -n 1
+    done
+}
+
+show_bbr_detailed_status() {
+    clear
+    echo "========================================"
+    echo "         BBR/BBRx 详细状态            "
+    echo "========================================"
+    echo
+    
+    log_info "系统信息:"
+    log_info "  内核版本: $(uname -r)"
+    log_info "  系统架构: $(uname -m)"
+    echo
+    
+    log_info "BBR 状态:"
+    local bbr_enabled=$(sysctl -n net.core.default_qdisc 2>/dev/null)
+    local bbr_congestion=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+    log_info "  默认队列规则: $bbr_enabled"
+    log_info "  拥塞控制算法: $bbr_congestion"
+    echo
+    
+    log_info "BBRx 状态:"
+    if lsmod | grep -q bbrx; then
+        log_success "  BBRx 内核模块已加载"
+        lsmod | grep bbrx
+    else
+        log_warning "  BBRx 内核模块未加载"
+    fi
+    
+    echo
+    log_info "网络性能测试建议:"
+    log_info "  使用 speedtest-cli 测试网络速度"
+    log_info "  使用 iperf3 测试网络延迟"
+    echo
 }
 
 # 卸载功能函数
@@ -1214,19 +1660,34 @@ uninstall_single_app() {
     # 删除相关镜像
     case $app in
         "portainer")
-            docker rmi portainer/portainer-ce:latest 2>/dev/null || true
+            local version="${APPS_VERSIONS[portainer]}"
+            local image="${APPS_IMAGES[portainer]}"
+            docker rmi "$image:$version" 2>/dev/null || true
             ;;
         "qbittorrent")
-            docker rmi lscr.io/linuxserver/qbittorrent:latest 2>/dev/null || true
+            local version="${APPS_VERSIONS[qbittorrent]}"
+            local image="${APPS_IMAGES[qbittorrent]}"
+            docker rmi "$image:$version" 2>/dev/null || true
             ;;
         "vertex")
-            docker rmi lswl/vertex-base:latest 2>/dev/null || true
+            local version="${APPS_VERSIONS[vertex]}"
+            local image="${APPS_IMAGES[vertex]}"
+            docker rmi "$image:$version" 2>/dev/null || true
             ;;
         "nginx-proxy-manager")
-            docker rmi chishin/nginx-proxy-manager-zh:latest 2>/dev/null || true
+            local version="${APPS_VERSIONS[nginx-proxy-manager]}"
+            local image="${APPS_IMAGES[nginx-proxy-manager]}"
+            docker rmi "$image:$version" 2>/dev/null || true
             ;;
         "transmission")
-            docker rmi lscr.io/linuxserver/transmission:latest 2>/dev/null || true
+            local version="${APPS_VERSIONS[transmission]}"
+            local image="${APPS_IMAGES[transmission]}"
+            docker rmi "$image:$version" 2>/dev/null || true
+            ;;
+        "filebrowser")
+            local version="${APPS_VERSIONS[filebrowser]}"
+            local image="${APPS_IMAGES[filebrowser]}"
+            docker rmi "$image:$version" 2>/dev/null || true
             ;;
     esac
     
@@ -1286,6 +1747,24 @@ main() {
                                 fi
                             else
                                 log_error "端口格式错误，应为 应用名:端口号"
+                                exit 1
+                            fi
+                            shift 2
+                            ;;
+                        --version)
+                            local version_config="$2"
+                            if [[ $version_config =~ ^([^:]+):(.+)$ ]]; then
+                                local app_name="${BASH_REMATCH[1]}"
+                                local version_num="${BASH_REMATCH[2]}"
+                                if [[ -n "${APPS_CONFIG[$app_name]}" ]]; then
+                                    APPS_VERSIONS[$app_name]=$version_num
+                                    log_info "已设置 $app_name 版本: $version_num"
+                                else
+                                    log_error "未知应用: $app_name"
+                                    exit 1
+                                fi
+                            else
+                                log_error "版本格式错误，应为 应用名:版本号"
                                 exit 1
                             fi
                             shift 2
@@ -1374,6 +1853,26 @@ main() {
             --status)
                 show_status
                 ;;
+            --enable-bbr)
+                check_root
+                enable_bbr
+                ;;
+            --disable-bbr)
+                check_root
+                disable_bbr
+                ;;
+            --install-bbrx)
+                check_root
+                install_bbrx
+                ;;
+            --uninstall-bbrx)
+                check_root
+                uninstall_bbrx
+                ;;
+            --bbr-status)
+                check_bbr_status
+                check_bbrx_status
+                ;;
             --help|-h)
                 echo "Docker 应用管理脚本 v1.0"
                 echo
@@ -1385,20 +1884,35 @@ main() {
                 echo "  --uninstall-apps          卸载指定应用"
                 echo "  --uninstall               进入交互式卸载菜单"
                 echo "  --status                  显示当前状态"
+                echo "  --enable-bbr              启用 BBR 拥塞控制"
+                echo "  --disable-bbr             禁用 BBR 拥塞控制"
+                echo "  --install-bbrx            安装 BBRx 内核模块"
+                echo "  --uninstall-bbrx          卸载 BBRx 内核模块"
+                echo "  --bbr-status              查看 BBR/BBRx 状态"
                 echo "  --help, -h                显示此帮助信息"
                 echo
                 echo "应用安装示例:"
                 echo "  $0 --install-apps --app portainer --app qbittorrent"
                 echo "  $0 --install-apps --app portainer --port portainer:9001"
+                echo "  $0 --install-apps --app portainer --version portainer:2.19.4"
+                echo "  $0 --install-apps --app qbittorrent --port qbittorrent:8081 --version qbittorrent:4.6.0"
                 echo
                 echo "应用卸载示例:"
                 echo "  $0 --uninstall-apps --app portainer"
                 echo "  $0 --uninstall-apps --app portainer --app qbittorrent"
                 echo "  $0 --uninstall-apps --all"
                 echo
+                echo "BBR 管理示例:"
+                echo "  $0 --enable-bbr"
+                echo "  $0 --disable-bbr"
+                echo "  $0 --install-bbrx"
+                echo "  $0 --bbr-status"
+                echo
                 echo "可用应用:"
                 for app in "${!APPS_CONFIG[@]}"; do
-                    echo "  - $app: ${APPS_CONFIG[$app]} (默认端口: ${APPS_PORTS[$app]})"
+                    local version="${APPS_VERSIONS[$app]}"
+                    local image="${APPS_IMAGES[$app]}"
+                    echo "  - $app: ${APPS_CONFIG[$app]} (默认端口: ${APPS_PORTS[$app]}, 默认版本: $image:$version)"
                 done
                 ;;
             *)

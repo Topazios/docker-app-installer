@@ -22,13 +22,21 @@
 
 ## 📋 支持的应用
 
-| 应用 | 描述 | 默认端口 | 功能 |
-|------|------|----------|------|
-| **Portainer** | Docker 管理界面 | 9000 | 可视化Docker管理 |
-| **qBittorrent** | BT下载工具 | 8080 | 种子下载管理 |
-| **Vertex** | 文件管理下载工具 | 3000 | 多协议下载管理 |
-| **Nginx Proxy Manager** | 反向代理管理 | 81 | 域名反向代理 |
-| **Transmission** | BT下载工具 | 9091 | 轻量级种子下载 |
+| 应用 | 描述 | 默认端口 | 默认版本 | 功能 |
+|------|------|----------|----------|------|
+| **Portainer** | Docker 管理界面 | 9000 | latest | 可视化Docker管理 |
+| **qBittorrent** | BT下载工具 | 8080 | 4.5.5 | 种子下载管理 |
+| **Vertex** | 文件管理下载工具 | 3000 | stable | 多协议下载管理 |
+| **Nginx Proxy Manager** | 反向代理管理 | 81 | latest | 域名反向代理 |
+| **Transmission** | BT下载工具 | 9091 | latest | 轻量级种子下载 |
+| **File Browser** | 文件浏览器 | 8081 | latest | 文件管理和共享 |
+
+### 🔗 共享下载目录
+
+qBittorrent、Transmission 和 File Browser 共享同一个下载目录：
+- **共享目录**: `/home/docker/shared/downloads`
+- **File Browser 访问**: 通过 `/srv` 路径访问共享下载目录
+- **统一管理**: 所有下载的文件都可以通过 File Browser 进行管理
 
 ## 🖥️ 系统要求
 
@@ -203,6 +211,30 @@ sudo ./docker-app-installer.sh --install-apps --app portainer --app qbittorrent
 
 # 自定义端口安装
 sudo ./docker-app-installer.sh --install-apps --app portainer --port portainer:9001
+
+# 自定义版本安装
+sudo ./docker-app-installer.sh --install-apps --app portainer --version portainer:2.19.4
+
+# 同时自定义端口和版本
+sudo ./docker-app-installer.sh --install-apps --app qbittorrent --port qbittorrent:8081 --version qbittorrent:4.6.0
+```
+
+#### BBR/BBRx 管理
+```bash
+# 启用 BBR 拥塞控制
+sudo ./docker-app-installer.sh --enable-bbr
+
+# 禁用 BBR 拥塞控制
+sudo ./docker-app-installer.sh --disable-bbr
+
+# 安装 BBRx 内核模块
+sudo ./docker-app-installer.sh --install-bbrx
+
+# 卸载 BBRx 内核模块
+sudo ./docker-app-installer.sh --uninstall-bbrx
+
+# 查看 BBR/BBRx 状态
+sudo ./docker-app-installer.sh --bbr-status
 ```
 
 #### 应用卸载
@@ -239,17 +271,22 @@ sudo ./docker-app-installer.sh --status
 │   └── data/
 ├── qbittorrent/
 │   ├── config/
-│   ├── downloads/
 │   └── watch/
 ├── vertex/
 │   └── (应用数据)
 ├── nginx-proxy-manager/
 │   ├── data/
 │   └── letsencrypt/
-└── transmission/
-    ├── config/
-    ├── downloads/
-    └── watch/
+├── transmission/
+│   ├── config/
+│   └── watch/
+├── filebrowser/
+│   └── config/
+└── shared/
+    └── downloads/          # 共享下载目录
+        ├── qbittorrent/    # qBittorrent 下载文件
+        ├── transmission/   # Transmission 下载文件
+        └── ...            # 其他下载文件
 ```
 
 ## 🔧 高级配置
@@ -300,6 +337,32 @@ sudo ./docker-app-installer.sh --install-apps --app portainer --port portainer:9
 #### Transmission
 - **默认端口**: 9091
 - **默认登录**: admin / changeme
+- **下载目录**: 共享目录 `/home/docker/shared/downloads`
+
+#### File Browser
+- **默认端口**: 8081
+- **默认登录**: admin / admin
+- **文件目录**: `/srv` (映射到共享下载目录)
+- **功能**: 文件管理、预览、下载、上传
+
+### 🌐 BBR/BBRx 网络优化
+
+#### BBR 拥塞控制
+- **功能**: 提升网络传输性能，减少延迟
+- **要求**: 内核版本 4.9 或更高
+- **自动检测**: 脚本会自动检查内核版本兼容性
+- **持久化**: 设置会自动保存到 `/etc/sysctl.conf`
+
+#### BBRx 内核模块
+- **功能**: 更先进的网络拥塞控制算法
+- **要求**: x86_64 架构，需要编译内核模块
+- **自动编译**: 脚本会自动下载和编译内核模块
+- **安全卸载**: 支持完全卸载和清理
+
+#### 使用建议
+- **BBR**: 适用于大多数 Linux 系统，提升网络性能
+- **BBRx**: 适用于对网络性能要求极高的场景
+- **兼容性**: 两个算法可以同时使用，互不冲突
 
 ## 🛡️ 安全特性
 

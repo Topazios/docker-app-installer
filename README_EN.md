@@ -22,13 +22,21 @@ A powerful Docker application one-click installer script that supports rapid dep
 
 ## 📋 Supported Applications
 
-| Application | Description | Default Port | Features |
-|-------------|-------------|--------------|----------|
-| **Portainer** | Docker Management Interface | 9000 | Visual Docker Management |
-| **qBittorrent** | BT Download Tool | 8080 | Torrent Download Management |
-| **Vertex** | File Management Download Tool | 3000 | Multi-protocol Download Management |
-| **Nginx Proxy Manager** | Reverse Proxy Management | 81 | Domain Reverse Proxy |
-| **Transmission** | BT Download Tool | 9091 | Lightweight Torrent Download |
+| Application | Description | Default Port | Default Version | Features |
+|-------------|-------------|--------------|-----------------|----------|
+| **Portainer** | Docker Management Interface | 9000 | latest | Visual Docker Management |
+| **qBittorrent** | BT Download Tool | 8080 | 4.5.5 | Torrent Download Management |
+| **Vertex** | File Management Download Tool | 3000 | stable | Multi-protocol Download Management |
+| **Nginx Proxy Manager** | Reverse Proxy Management | 81 | latest | Domain Reverse Proxy |
+| **Transmission** | BT Download Tool | 9091 | latest | Lightweight Torrent Download |
+| **File Browser** | File Browser | 8081 | latest | File Management and Sharing |
+
+### 🔗 Shared Download Directory
+
+qBittorrent, Transmission, and File Browser share the same download directory:
+- **Shared Directory**: `/home/docker/shared/downloads`
+- **File Browser Access**: Access shared download directory via `/srv` path
+- **Unified Management**: All downloaded files can be managed through File Browser
 
 ## 🖥️ System Requirements
 
@@ -203,6 +211,30 @@ sudo ./docker-app-installer.sh --install-apps --app portainer --app qbittorrent
 
 # Custom port installation
 sudo ./docker-app-installer.sh --install-apps --app portainer --port portainer:9001
+
+# Custom version installation
+sudo ./docker-app-installer.sh --install-apps --app portainer --version portainer:2.19.4
+
+# Custom port and version installation
+sudo ./docker-app-installer.sh --install-apps --app qbittorrent --port qbittorrent:8081 --version qbittorrent:4.6.0
+```
+
+#### BBR/BBRx Management
+```bash
+# Enable BBR congestion control
+sudo ./docker-app-installer.sh --enable-bbr
+
+# Disable BBR congestion control
+sudo ./docker-app-installer.sh --disable-bbr
+
+# Install BBRx kernel module
+sudo ./docker-app-installer.sh --install-bbrx
+
+# Uninstall BBRx kernel module
+sudo ./docker-app-installer.sh --uninstall-bbrx
+
+# Check BBR/BBRx status
+sudo ./docker-app-installer.sh --bbr-status
 ```
 
 #### Application Uninstall
@@ -239,17 +271,22 @@ The script creates the following directory structure in `/home/docker`:
 │   └── data/
 ├── qbittorrent/
 │   ├── config/
-│   ├── downloads/
 │   └── watch/
 ├── vertex/
 │   └── (application data)
 ├── nginx-proxy-manager/
 │   ├── data/
 │   └── letsencrypt/
-└── transmission/
-    ├── config/
-    ├── downloads/
-    └── watch/
+├── transmission/
+│   ├── config/
+│   └── watch/
+├── filebrowser/
+│   └── config/
+└── shared/
+    └── downloads/          # Shared download directory
+        ├── qbittorrent/    # qBittorrent download files
+        ├── transmission/   # Transmission download files
+        └── ...            # Other download files
 ```
 
 ## 🔧 Advanced Configuration
@@ -300,6 +337,32 @@ sudo ./docker-app-installer.sh --install-apps --app portainer --port portainer:9
 #### Transmission
 - **Default Port**: 9091
 - **Default Login**: admin / changeme
+- **Download Directory**: Shared directory `/home/docker/shared/downloads`
+
+#### File Browser
+- **Default Port**: 8081
+- **Default Login**: admin / admin
+- **File Directory**: `/srv` (mapped to shared download directory)
+- **Features**: File management, preview, download, upload
+
+### 🌐 BBR/BBRx Network Optimization
+
+#### BBR Congestion Control
+- **Function**: Improve network transmission performance, reduce latency
+- **Requirement**: Kernel version 4.9 or higher
+- **Auto Detection**: Script automatically checks kernel version compatibility
+- **Persistence**: Settings are automatically saved to `/etc/sysctl.conf`
+
+#### BBRx Kernel Module
+- **Function**: More advanced network congestion control algorithm
+- **Requirement**: x86_64 architecture, requires kernel module compilation
+- **Auto Compilation**: Script automatically downloads and compiles kernel modules
+- **Safe Uninstall**: Supports complete uninstall and cleanup
+
+#### Usage Recommendations
+- **BBR**: Suitable for most Linux systems, improves network performance
+- **BBRx**: Suitable for scenarios with extremely high network performance requirements
+- **Compatibility**: Both algorithms can be used simultaneously without conflicts
 
 ## 🛡️ Security Features
 
